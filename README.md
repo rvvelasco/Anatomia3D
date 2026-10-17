@@ -15,10 +15,15 @@ Atlas 3D interactivo de **huesos y músculos** del cuerpo humano para estudiar a
 - **16 lecciones guiadas** (manguito rotador, cuádriceps, isquiotibiales, pata de ganso, carpo, columna, costillas…) con trucos para memorizar.
 - **Mapa de nervios**: elige un nervio y verás todos los músculos que inerva y las consecuencias de su lesión.
 - **Modo estudio**: *Identificar*, *Localizar*, *Test* (preguntas de nervio, acción, origen, inserción y articulaciones) y *Fichas* con repaso espaciado (cajas de Leitner).
+- **Examen simulado**: 10 preguntas seguidas con nota, tiempo, historial y lista de lo que hay que repasar.
+- **Favoritos ★**: guarda las estructuras que te cuestan, fíltralas en la lista y estúdialas aparte.
+- **Corte anatómico**: planos sagital, coronal y transversal que se pueden desplazar para ver el interior.
+- **Imprimir ficha** completa con una imagen del modelo, **tema claro/oscuro** y botón **🎲 al azar**.
+- **Navegación con historial**: el botón "Atrás" (del navegador o del móvil) vuelve a la estructura anterior.
 - **Progreso**: estructuras vistas y lecciones completadas.
 - Filtros por tipo, región, lado y profundidad muscular; transparencia; aislar u ocultar; vistas de cámara, giro automático y captura de imagen.
 - Buscador de estructuras, nervios y lecciones; enlaces compartibles (`#biceps_braquial:d`, `#leccion=manguito`, `#nervio=radial`).
-- **Versión móvil**: panel lateral deslizable y ficha como hoja inferior que se expande con un toque.
+- **Versión móvil y tablet**: panel lateral deslizable, ficha como hoja inferior en vertical y como panel lateral en horizontal.
 
 ## Publicar en GitHub Pages
 
@@ -49,7 +54,7 @@ js/data/muscles.js    datos de los músculos
 js/data/lessons.js    lecciones guiadas
 js/data/nerves.js     nervios y sus lesiones
 vendor/               Three.js r170 (licencia MIT)
-dev/                  herramientas de desarrollo (capturas y validación de datos)
+dev/                  herramientas de desarrollo: validación de datos (check), pruebas de humo (smoke, smoke2) y de UX (ux)
 ```
 
 Para añadir un músculo: crea su entrada en `js/data/muscles.js` (con `oh`/`ih`, los huesos de origen e inserción) y su geometría en `js/model/muscles.js` con el mismo id. `dev/check.html` comprueba que datos y geometría coinciden.

@@ -24,6 +24,7 @@
     <button class="btn study-btn" id="btnStudy" title="Modo estudio">
       <svg viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5z" /><path d="M6 11v5c3 2 9 2 12 0v-5" /></svg><span class="hide-sm">Estudiar</span>
     </button>
+    <button class="icon-btn" id="btnTheme" aria-label="Cambiar tema" title="Tema claro">☀️</button>
     <button class="icon-btn" id="btnHelp" aria-label="Ayuda" title="Ayuda">?</button>
   </header>
 
@@ -40,9 +41,11 @@
           <button data-type="todo" class="on">Todo</button>
           <button data-type="hueso">Huesos</button>
           <button data-type="musculo">Músculos</button>
+          <button data-type="fav" title="Tus favoritos">★</button>
         </div>
         <div class="row">
           <select id="regionSelect" aria-label="Región"></select>
+          <button class="icon-btn" id="btnRandom" title="Estructura al azar" aria-label="Estructura al azar">🎲</button>
           <label class="switch" title="Mostrar en el modelo solo la región elegida"><input type="checkbox" id="isolateRegion" /><span></span>Solo en 3D</label>
         </div>
       </div>
@@ -91,6 +94,17 @@
       </div>
       <div class="pop-title">Transparencia de músculos</div>
       <input type="range" id="muscleOpacity" min="0.1" max="1" step="0.05" value="1" aria-label="Opacidad de los músculos" />
+      <div class="pop-title">Corte anatómico</div>
+      <div class="seg small" id="cutSeg">
+        <button data-c="none" class="on">Ninguno</button>
+        <button data-c="sagital" title="Separa derecha e izquierda">Sagital</button>
+        <button data-c="coronal" title="Separa delante y detrás">Coronal</button>
+        <button data-c="transversal" title="Separa arriba y abajo">Transv.</button>
+      </div>
+      <div class="row" id="cutRow" hidden>
+        <input type="range" id="cutPos" min="0" max="1" step="0.005" value="0.5" aria-label="Posición del corte" />
+        <button class="icon-btn" id="cutFlip" title="Ver el otro lado del corte" aria-label="Invertir corte">⇄</button>
+      </div>
       <label class="switch"><input type="checkbox" id="showCart" checked /><span></span>Cartílagos y dientes</label>
       <label class="switch"><input type="checkbox" id="dimOthers" checked /><span></span>Atenuar lo no seleccionado</label>
     </div>
@@ -114,6 +128,7 @@
   <aside class="sheet" id="sheet" aria-live="polite">
     <div class="sheet-grip" id="sheetGrip" aria-label="Ampliar o reducir"><span></span></div>
     <button class="icon-btn sheet-close" id="sheetClose" aria-label="Cerrar">✕</button>
+    <button class="sheet-back" id="sheetBack" hidden>← <span></span></button>
     <div class="sheet-body" id="sheetBody"></div>
   </aside>
 
@@ -129,6 +144,9 @@
         <div><b>📘 Lecciones</b><p>Recorridos guiados con trucos para memorizar (manguito rotador, cuádriceps, carpo…).</p></div>
         <div><b>⚡ Nervios</b><p>Elige un nervio y verás todos los músculos que inerva y qué ocurre si se lesiona.</p></div>
         <div><b>🎓 Estudiar</b><p>Identificar, localizar, preguntas tipo test y fichas con repaso espaciado.</p></div>
+        <div><b>🔪 Corte anatómico</b><p>En Capas puedes cortar el cuerpo en un plano sagital, coronal o transversal y moverlo para ver por dentro.</p></div>
+        <div><b>★ Favoritos</b><p>Guarda las estructuras que te cuestan, fíltralas en la lista y estúdialas en el modo estudio.</p></div>
+        <div><b>📝 Examen</b><p>10 preguntas seguidas con nota final y lista de lo que debes repasar. Puedes imprimir cualquier ficha 🖨.</p></div>
         <div><b>⌨️ Atajos</b><p><kbd>/</kbd> buscar · <kbd>Esc</kbd> deseleccionar · <kbd>←</kbd><kbd>→</kbd> pasos de lección · <kbd>F</kbd> centrar · <kbd>H</kbd> ocultar.</p></div>
       </div>
       <p class="muted small">Modelo anatómico esquemático generado por código con fines de estudio: las formas son simplificadas. Los datos siguen la terminología anatómica estándar; contrasta siempre con tu atlas de referencia. Tus notas, progreso y fichas se guardan solo en este navegador.</p>

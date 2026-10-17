@@ -16,6 +16,8 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
+// hoja inferior solo en móvil vertical; en horizontal la ficha va a la derecha
+const isBottomSheet = () => window.matchMedia('(max-width: 860px) and (orientation: portrait)').matches;
 const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
 
@@ -142,6 +144,7 @@ function addPart(p, tipo) {
     ? COL.bone.clone().offsetHSL(0, 0, (h - 0.5) * 0.04)
     : new THREE.Color().setHSL((0.988 + h * 0.03) % 1, 0.6 + h * 0.06, 0.33 + ((h * 7) % 1) * 0.06);
   const mat = tipo === 'hueso' ? boneMaterial(base.clone()) : muscleMaterial(base.clone());
+  mat.clippingPlanes = [clipPlane];
   const mesh = new THREE.Mesh(p.geo, mat);
   p.geo.computeBoundingSphere();
   mesh.userData = { id: p.id, side: p.side, key: p.key, tipo, base };
@@ -159,6 +162,7 @@ function buildModel() {
   cart.userData.cart = true;
   teeth.userData.cart = true;
   for (const m of [cart, teeth, cav]) {
+    m.material.clippingPlanes = [clipPlane];
     auxMeshes.push(m);
     scene.add(m);
   }
@@ -188,6 +192,10 @@ const state = {
   hidden: new Set(),
   isolate: null, // Set<Mesh>
   seen: new Set(store.get('seen', [])),
+  favs: new Set(store.get('favs', [])),
+  cut: 'none',
+  cutPos: 0.5,
+  cutFlip: false,
 };
 
 function meshVisible(m) {
@@ -260,7 +268,7 @@ function computeRoles() {
     for (const m of lessonMeshes(l, l.ids)) r.set(m, 'l');
     for (const m of lessonMeshes(l, l.pasos[state.lesson.step].ids)) r.set(m, 's');
   }
-  if (state.mode === 'study' && quiz.target && (quiz.mode !== 'loc' || quiz.answered)) r.set(quiz.target, 's');
+  if (state.mode === 'study' && quiz.target && (qm() !== 'loc' || quiz.answered)) r.set(quiz.target, 's');
   return r;
 }
 
@@ -324,10 +332,18 @@ function rebuildLabels() {
   if (!state.labels || !roles.size) return;
   if (state.mode === 'study' && !quiz.answered) return; // no revelar la respuesta
   const seen = new Set();
+  // solo se etiqueta lo esencial para no saturar: la selección y sus conexiones directas
+  const sel = state.mode === 'structure' && state.sel ? S[state.sel.id] : null;
+  const wanted = (m, r) => {
+    if (r === 's') return true;
+    if (state.mode === 'lesson' || state.mode === 'nerve' || state.mode === 'study') return false;
+    if (sel?.tipo === 'hueso') return r === 'a';
+    return true;
+  };
   const list = [...roles.entries()]
-    .filter(([m]) => m.visible)
+    .filter(([m, r]) => m.visible && wanted(m, r))
     .sort((a, b) => ROLE_ORDER[a[1]] - ROLE_ORDER[b[1]]);
-  const max = isMobile() ? 8 : 16;
+  const max = isMobile() ? 7 : 12;
   for (const [m, r] of list) {
     const k = m.userData.id + (m.userData.side || '');
     if (seen.has(k) || labelItems.length >= max) continue;
@@ -406,7 +422,7 @@ function focusMeshes(meshes, dirOverride = null, pad = 1.4) {
   const D = Math.min(Math.max(dist, 30), 600);
   const target = sphere.center.clone();
   // en móvil la hoja inferior tapa parte de la pantalla: se sube el objeto al hueco visible
-  if (isMobile() && document.body.classList.contains('sheet-open')) {
+  if (isBottomSheet() && document.body.classList.contains('sheet-open')) {
     const peek = parseFloat(getComputedStyle(document.body).getPropertyValue('--peek')) || 200;
     const H = stage.clientHeight;
     const visH = 2 * D * Math.tan(vf);
@@ -428,18 +444,23 @@ function setView(v) {
 // ===========================================================================
 const sheetBody = $('#sheetBody');
 function openSheet(full = false) {
+  // en pantallas medianas se pliega el panel lateral para dejar sitio al modelo
+  if (!isMobile() && window.innerWidth < 1200 && !document.body.classList.contains('side-closed')) {
+    document.body.classList.add('side-closed', 'side-auto');
+  }
   document.body.classList.add('sheet-open');
   document.body.classList.toggle('sheet-full', full);
   requestAnimationFrame(updatePeek);
 }
 function closeSheet() {
   document.body.classList.remove('sheet-open', 'sheet-full');
+  if (document.body.classList.contains('side-auto')) document.body.classList.remove('side-closed', 'side-auto');
 }
 function updatePeek() {
   const marker = sheetBody.querySelector('.peek-end');
   if (!marker) return;
-  const top = marker.getBoundingClientRect().top - sheetBody.getBoundingClientRect().top + sheetBody.scrollTop;
-  const peek = Math.min(Math.max(top + 34, 130), window.innerHeight * 0.62);
+  const top = marker.getBoundingClientRect().top - $('#sheet').getBoundingClientRect().top + sheetBody.scrollTop;
+  const peek = Math.min(Math.max(top + 14, 130), window.innerHeight * 0.62);
   document.body.style.setProperty('--peek', `${peek}px`);
 }
 window.addEventListener('resize', () => requestAnimationFrame(updatePeek));
@@ -512,7 +533,7 @@ function structureHeader(e, side) {
     <div class="latin">${esc(d.latin || '')}</div>
     <p class="peek-line">${esc(firstSentence(e.tipo === 'musculo' ? d.accion : d.descripcion))}</p>
     <div class="peek-end"></div>
-    <div class="chips"><span class="chip">${esc(groupOf(e))}</span>${e.tipo === 'musculo' ? `<span class="chip">Capa ${CAPAS[d.capa].toLowerCase()}</span>` : `<span class="chip">${esc(d.clase || '')}</span>`}<span class="chip">${d.bilateral ? 'Par' : 'Impar'}</span>${state.seen.has(e.id) ? '<span class="chip">✓ Vista</span>' : ''}</div>
+    <div class="chips"><button class="chip fav ${state.favs.has(e.id) ? 'on' : ''}" data-act="fav" title="Guardar en favoritos para repasar">${state.favs.has(e.id) ? '★ En favoritos' : '☆ Favorito'}</button><span class="chip">${esc(groupOf(e))}</span>${e.tipo === 'musculo' ? `<span class="chip">Capa ${CAPAS[d.capa].toLowerCase()}</span>` : `<span class="chip">${esc(d.clase || '')}</span>`}<span class="chip">${d.bilateral ? 'Par' : 'Impar'}</span>${state.seen.has(e.id) ? '<span class="chip">✓ Vista</span>' : ''}</div>
     ${sideSeg}`;
 }
 
@@ -536,20 +557,18 @@ function quickSummary(e, compact = false) {
   </div>`;
 }
 
-function renderStructure() {
-  const { id, side } = state.sel;
-  const e = S[id];
+function paneHTML(e, tab) {
+  const id = e.id;
   const d = e.d;
-  const tabs = [['resumen', 'Resumen'], ['detalle', 'Detalle'], ['conexiones', 'Conexiones'], ['clinica', 'Clínica'], ['notas', 'Mis notas']];
   let pane = '';
   const anyHidden = state.hidden.size || (state.isolate && state.mode === 'structure');
-  if (state.tab === 'resumen') {
+  if (tab === 'resumen') {
     pane += quickSummary(e);
     const ls = lessonsOf[id] || [];
     if (ls.length) pane += `<div class="tip trick"><b>💡 Para recordar</b>${esc(LESSON[ls[0]].truco)}<div class="links" style="margin-top:8px">${ls.map(lessonBtn).join('')}</div></div>`;
     if (d.clinica) pane += `<div class="tip clin"><b>🩺 Dato clínico</b>${esc(firstSentence(d.clinica))}</div>`;
-    pane += `<div class="actions"><button class="btn sm" data-act="focus">🎯 Centrar</button><button class="btn sm" data-act="isolate">🔍 Aislar con conexiones</button><button class="btn sm" data-act="hide">🙈 Ocultar</button>${anyHidden ? '<button class="btn sm" data-act="showall">👁 Mostrar todo</button>' : ''}</div>`;
-  } else if (state.tab === 'detalle') {
+    pane += `<div class="actions"><button class="btn sm" data-act="focus">🎯 Centrar</button><button class="btn sm" data-act="isolate">🔍 Aislar con conexiones</button><button class="btn sm" data-act="hide">🙈 Ocultar</button><button class="btn sm" data-act="print">🖨 Imprimir ficha</button>${anyHidden ? '<button class="btn sm" data-act="showall">👁 Mostrar todo</button>' : ''}</div>`;
+  } else if (tab === 'detalle') {
     if (e.tipo === 'musculo') {
       pane += block('🎯 Acción', `<p>${esc(d.accion)}</p>`);
       pane += block('<span class="sw sw-o"></span> Origen', `<p>${esc(d.origen)}</p>`);
@@ -562,7 +581,7 @@ function renderStructure() {
       if (d.partes?.length) pane += block('📌 Partes y accidentes óseos', `<ul>${d.partes.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`);
       pane += block('🦴 Tipo de hueso', `<p>${esc(d.clase)}</p>`);
     }
-  } else if (state.tab === 'conexiones') {
+  } else if (tab === 'conexiones') {
     if (e.tipo === 'musculo') {
       pane += block('<span class="sw sw-o"></span> Huesos de origen', links(d.oh, 'o'));
       pane += block('<span class="sw sw-i"></span> Huesos de inserción', links(d.ih, 'i'));
@@ -580,7 +599,7 @@ function renderStructure() {
       pane += block(`<span class="sw sw-o"></span> Músculos que se originan aquí (${d.musOrigen.length})`, links(d.musOrigen, 'o'));
       pane += block(`<span class="sw sw-i"></span> Músculos que se insertan aquí (${d.musInsercion.length})`, links(d.musInsercion, 'i'));
     }
-  } else if (state.tab === 'clinica') {
+  } else if (tab === 'clinica') {
     pane += d.clinica ? `<div class="tip clin"><b>🩺 Nota clínica</b>${esc(d.clinica)}</div>` : '<p class="muted">Sin notas clínicas.</p>';
     for (const nid of nervesOf[id] || []) pane += `<div class="tip clin"><b>⚡ Si se lesiona el ${esc(NERVE[nid].nombre.split(' (')[0].toLowerCase())}</b>${esc(NERVE[nid].lesion)}</div>`;
     for (const lid of lessonsOf[id] || []) pane += `<div class="tip trick"><b>💡 ${esc(LESSON[lid].titulo)}</b>${esc(LESSON[lid].truco)}</div>`;
@@ -588,6 +607,14 @@ function renderStructure() {
     const notes = store.get('notes', {});
     pane += `<p class="muted small" style="margin:0">Escribe tus apuntes, trucos o dudas. Se guardan en este navegador.</p><textarea class="notes" id="notes" placeholder="Ej.: se palpa al apretar los dientes…">${esc(notes[id] || '')}</textarea>`;
   }
+  return pane;
+}
+
+function renderStructure() {
+  const { id, side } = state.sel;
+  const e = S[id];
+  const tabs = [['resumen', 'Resumen'], ['detalle', 'Detalle'], ['conexiones', 'Conexiones'], ['clinica', 'Clínica'], ['notas', 'Mis notas']];
+  const pane = paneHTML(e, state.tab);
   sheetBody.innerHTML = `${structureHeader(e, side)}
     <nav class="ptabs">${tabs.map(([k, v]) => `<button data-tab="${k}" class="${state.tab === k ? 'on' : ''}">${v}</button>`).join('')}</nav>
     <div class="pane">${pane}</div>`;
@@ -723,12 +750,47 @@ function setHash() {
   if (state.mode === 'structure' && state.sel) h = `#${state.sel.id}${state.sel.side ? ':' + state.sel.side : ''}`;
   else if (state.mode === 'lesson' && state.lesson) h = `#leccion=${state.lesson.id}`;
   else if (state.mode === 'nerve' && state.nerve) h = `#nervio=${state.nerve}`;
+  if (h === location.hash || (!h && !location.hash)) return;
+  // cada estructura, lección o nervio abierto es una entrada del historial:
+  // el botón "Atrás" (del navegador o del móvil) vuelve a lo anterior
+  const sameItem = h && location.hash && h.split(':')[0] === location.hash.split(':')[0];
   try {
-    history.replaceState(null, '', h || location.pathname + location.search);
+    if (navigatingHistory || sameItem) history.replaceState(null, '', h || location.pathname + location.search);
+    else {
+      if (lastLabel) backStack.push(lastLabel);
+      history.pushState(null, '', h || location.pathname + location.search);
+    }
   } catch {
     /* sin historial */
   }
+  updateBackBtn();
 }
+let navigatingHistory = false;
+let lastLabel = null;
+const backStack = [];
+function currentLabel() {
+  if (state.mode === 'structure' && state.sel) return S[state.sel.id].d.nombre;
+  if (state.mode === 'lesson' && state.lesson) return LESSON[state.lesson.id].titulo;
+  if (state.mode === 'nerve' && state.nerve) return NERVE[state.nerve].nombre;
+  return null;
+}
+function updateBackBtn() {
+  lastLabel = currentLabel();
+  const btn = $('#sheetBack');
+  const prev = backStack[backStack.length - 1];
+  btn.hidden = !prev || !lastLabel;
+  if (prev) btn.querySelector('span').textContent = prev;
+}
+$('#sheetBack').addEventListener('click', () => history.back());
+window.addEventListener('popstate', () => {
+  backStack.pop();
+  navigatingHistory = true;
+  try {
+    if (!openFromHash()) closeAll();
+  } finally {
+    navigatingHistory = false;
+  }
+});
 
 // Clicks dentro de la hoja
 sheetBody.addEventListener('click', (ev) => {
@@ -745,12 +807,12 @@ sheetBody.addEventListener('click', (ev) => {
   if (tab) {
     state.tab = tab.dataset.tab;
     renderStructure();
-    if (isMobile()) openSheet(true);
+    if (isBottomSheet()) openSheet(true);
     return;
   }
   const sd = t.closest('#selSide [data-sd]');
   if (sd) return selectStructure(state.sel.id, sd.dataset.sd || null);
-  if (t.closest('[data-expand]') && isMobile()) return openSheet(!document.body.classList.contains('sheet-full'));
+  if (t.closest('[data-expand]') && isBottomSheet()) return openSheet(!document.body.classList.contains('sheet-full'));
   const act = t.closest('[data-act]')?.dataset.act;
   if (act) handleAction(act, t.closest('[data-act]'));
 });
@@ -785,6 +847,17 @@ function handleAction(act, el) {
   }
   if (act.startsWith('study')) return studyAction(act, el);
   if (!state.sel) return;
+  if (act === 'fav') {
+    const id = state.sel.id;
+    if (state.favs.has(id)) state.favs.delete(id);
+    else state.favs.add(id);
+    store.set('favs', [...state.favs]);
+    toast(state.favs.has(id) ? '★ Guardado en favoritos. Puedes estudiarlos en 🎓 › ★ Favoritos' : 'Quitado de favoritos', 2500);
+    renderStructure();
+    renderList();
+    return;
+  }
+  if (act === 'print') return printSheet();
   const own = S[state.sel.id].meshes.filter((m) => sideMatch(state.sel, m));
   if (act === 'focus') focusMeshes(own);
   if (act === 'hide') {
@@ -832,7 +905,9 @@ function renderWelcome() {
 // Panel lateral: lista, lecciones, nervios, progreso
 // ===========================================================================
 function entryMatchesFilters(e) {
-  if (state.type !== 'todo' && e.tipo !== state.type) return false;
+  if (state.type === 'fav') {
+    if (!state.favs.has(e.id)) return false;
+  } else if (state.type !== 'todo' && e.tipo !== state.type) return false;
   if (state.region && e.d.region !== state.region) return false;
   return true;
 }
@@ -852,11 +927,11 @@ function renderList() {
     html += `<details ${state.region ? 'open' : ''}><summary>${rn}<span class="count">${items.length}</span></summary>`;
     for (const [g, arr] of ordered) {
       html += `<div class="grp">${esc(g)}</div>`;
-      html += arr.map((e) => `<button class="item" data-id="${e.id}"><span class="dot ${e.tipo}"></span>${esc(e.d.nombre)}${state.seen.has(e.id) ? '<span class="seen">✓</span>' : ''}</button>`).join('');
+      html += arr.map((e) => `<button class="item" data-id="${e.id}"><span class="dot ${e.tipo}"></span>${esc(e.d.nombre)}${state.favs.has(e.id) ? '<span class="star">★</span>' : ''}${state.seen.has(e.id) ? '<span class="seen">✓</span>' : ''}</button>`).join('');
     }
     html += '</details>';
   }
-  $('#list').innerHTML = html || '<p class="muted" style="padding:12px">Sin resultados</p>';
+  $('#list').innerHTML = html || `<p class="muted" style="padding:12px">${state.type === 'fav' ? 'Aún no tienes favoritos. Abre una ficha y pulsa "☆ Favorito" para guardarla y repasarla luego.' : 'Sin resultados'}</p>`;
   updateListSel();
 }
 
@@ -1020,6 +1095,9 @@ function resetAll() {
   setDepth(1);
   state.isolateRegion = false;
   $('#isolateRegion').checked = false;
+  state.cut = 'none';
+  segOn('#cutSeg', document.querySelector('#cutSeg [data-c="none"]'));
+  applyCut();
   applyVisibility();
   if (state.mode === 'structure') renderSheet();
   animateCamera(HOME.t, HOME.p);
@@ -1034,6 +1112,92 @@ function screenshot() {
   a.click();
   toast('Imagen guardada 📸');
 }
+
+// ---------------------------------------------------------------------------
+// Imprimir ficha (con imagen del modelo)
+// ---------------------------------------------------------------------------
+function printSheet() {
+  const e = S[state.sel.id];
+  renderer.render(scene, camera);
+  const img = renderer.domElement.toDataURL('image/png');
+  const notes = store.get('notes', {})[e.id];
+  sheetBody.innerHTML = `${structureHeader(e, state.sel.side)}<img class="print-shot" src="${img}" alt="">
+    <div class="pane">${paneHTML(e, 'resumen')}<h3 class="print-h">Detalle</h3>${paneHTML(e, 'detalle')}<h3 class="print-h">Conexiones</h3>${paneHTML(e, 'conexiones')}<h3 class="print-h">Clínica</h3>${paneHTML(e, 'clinica')}${notes ? `<h3 class="print-h">Mis notas</h3><p>${esc(notes)}</p>` : ''}</div>`;
+  document.body.classList.add('printing');
+  setTimeout(() => {
+    window.print();
+    document.body.classList.remove('printing');
+    renderSheet();
+  }, 60);
+}
+
+// Estructura al azar (respeta los filtros de la lista)
+$('#btnRandom').addEventListener('click', () => {
+  const pool = Object.values(S).filter(entryMatchesFilters);
+  if (!pool.length) return toast('No hay estructuras con esos filtros');
+  const e = pickOne(pool);
+  selectStructure(e.id, e.d.bilateral ? pickOne(['d', 'i']) : null, { focus: true, fromList: true });
+});
+
+// ---------------------------------------------------------------------------
+// Corte anatómico (plano de sección)
+// ---------------------------------------------------------------------------
+const clipPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+const CUTS = {
+  sagital: { n: [1, 0, 0], min: -32, max: 32, view: 'right', flipView: 'left' },
+  coronal: { n: [0, 0, -1], min: -14, max: 14, view: 'front', flipView: 'back' },
+  transversal: { n: [0, -1, 0], min: 0, max: 178, view: 'top', flipView: 'top' },
+};
+function applyCut() {
+  const c = CUTS[state.cut];
+  renderer.localClippingEnabled = !!c;
+  $('#cutRow').hidden = !c;
+  if (c) {
+    const v = c.min + (c.max - c.min) * state.cutPos;
+    const n = new THREE.Vector3(...c.n).multiplyScalar(state.cutFlip ? -1 : 1);
+    // se conserva la parte donde n·p + constante >= 0
+    clipPlane.normal.copy(n);
+    clipPlane.constant = -n.dot(new THREE.Vector3(c.n[0] ? v : 0, c.n[1] ? v : 0, c.n[2] ? v : 0));
+  }
+  document.querySelector('.tool[data-tool="layers"]').classList.toggle('on', !!c || state.depth > 1 || state.opacity < 1 || state.side !== 'ambos');
+  needsRender = true;
+}
+$('#cutSeg').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  state.cut = b.dataset.c;
+  segOn('#cutSeg', b);
+  if (state.cut === 'transversal' && state.cutPos === 0.5) state.cutPos = 0.75;
+  $('#cutPos').value = state.cutPos;
+  applyCut();
+  // gira la cámara para mirar la cara del corte
+  if (CUTS[state.cut]) setView(state.cutFlip ? CUTS[state.cut].flipView : CUTS[state.cut].view);
+});
+$('#cutPos').addEventListener('input', (ev) => {
+  state.cutPos = +ev.target.value;
+  applyCut();
+});
+$('#cutFlip').addEventListener('click', () => {
+  state.cutFlip = !state.cutFlip;
+  applyCut();
+  if (CUTS[state.cut]) setView(state.cutFlip ? CUTS[state.cut].flipView : CUTS[state.cut].view);
+});
+
+// ---------------------------------------------------------------------------
+// Tema claro / oscuro
+// ---------------------------------------------------------------------------
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $('#btnTheme').textContent = t === 'light' ? '🌙' : '☀️';
+  $('#btnTheme').title = t === 'light' ? 'Tema oscuro' : 'Tema claro';
+  document.querySelector('meta[name=theme-color]').content = t === 'light' ? '#f4f6f9' : '#0f1319';
+}
+setTheme(store.get('theme', window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+$('#btnTheme').addEventListener('click', () => {
+  const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  setTheme(t);
+  store.set('theme', t);
+});
 
 // ===========================================================================
 // Búsqueda
@@ -1126,7 +1290,8 @@ function pick(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   ptr.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ptr, camera);
-  const hits = ray.intersectObjects(allMeshes.filter((m) => m.visible), false);
+  let hits = ray.intersectObjects(allMeshes.filter((m) => m.visible), false);
+  if (renderer.localClippingEnabled) hits = hits.filter((h) => clipPlane.distanceToPoint(h.point) >= 0);
   if (!hits.length) return null;
   const solid = hits.find((h) => h.object.material.opacity > 0.3);
   return (solid || hits[0]).object;
@@ -1179,13 +1344,14 @@ canvas.addEventListener('pointerdown', (ev) => {
 let lastClick = { t: 0, m: null };
 canvas.addEventListener('pointerup', (ev) => {
   if (!downAt) return;
-  const wasDrag = downAt.drag || performance.now() - downAt.t > 600;
+  // solo el desplazamiento decide si fue un arrastre (en equipos lentos un clic puede tardar)
+  const wasDrag = downAt.drag || performance.now() - downAt.t > 1500;
   downAt = null;
   if (wasDrag) return;
   const m = pick(ev.clientX, ev.clientY);
   const now = performance.now();
   if (state.mode === 'study') {
-    if (quiz.mode === 'loc' && m) quizLocate(m);
+    if (qm() === 'loc' && m) quizLocate(m);
     return;
   }
   if (m && lastClick.m === m && now - lastClick.t < 380) {
@@ -1201,12 +1367,16 @@ canvas.addEventListener('pointerup', (ev) => {
 // ===========================================================================
 // Modo estudio
 // ===========================================================================
+const qm = () => (quiz.mode === 'exam' ? quiz.sub : quiz.mode);
+const EXAM_N = 10;
 const quiz = { mode: 'id', scope: 'todo', target: null, answered: false, ok: 0, total: 0, streak: 0, best: store.get('best', 0), q: null, revealed: false, last: null };
 
 function quizPool() {
   return allMeshes.filter((m) => {
     const e = S[m.userData.id];
-    if (quiz.scope !== 'todo' && e.tipo !== quiz.scope) return false;
+    if (quiz.scope === 'fav') {
+      if (!state.favs.has(e.id)) return false;
+    } else if (quiz.scope !== 'todo' && e.tipo !== quiz.scope) return false;
     if (state.region && e.d.region !== state.region) return false;
     return meshVisible(m);
   });
@@ -1303,6 +1473,14 @@ function nextQuestion() {
   quiz.answered = false;
   quiz.revealed = false;
   quiz.q = null;
+  if (quiz.mode === 'exam') {
+    if (quiz.exam.results.length >= EXAM_N) {
+      quiz.target = null;
+      applyColors();
+      return renderSheet();
+    }
+    quiz.sub = pickOne(['id', 'test', 'test']);
+  }
   const pool = quizPool();
   const ids = new Set(pool.map((m) => m.userData.id));
   if (ids.size < 4) {
@@ -1312,7 +1490,7 @@ function nextQuestion() {
     return;
   }
   let m;
-  if (quiz.mode === 'cards') {
+  if (qm() === 'cards') {
     const id = pickCard(pool);
     const cands = pool.filter((x) => x.userData.id === id);
     m = cands.find((x) => x.userData.side !== 'i') || cands[0];
@@ -1325,13 +1503,13 @@ function nextQuestion() {
   quiz.target = m;
   quiz.last = m.userData.id;
   const e = S[m.userData.id];
-  if (quiz.mode === 'id') {
+  if (qm() === 'id') {
     const same = [...ids].filter((x) => x !== e.id && S[x].tipo === e.tipo);
     const near = shuffle(same.filter((x) => S[x].d.region === e.d.region));
     const far = shuffle(same.filter((x) => S[x].d.region !== e.d.region));
     const others = shuffle([...ids].filter((x) => S[x].tipo !== e.tipo));
     quiz.q = { opts: shuffle([e.id, ...[...near, ...far, ...others].slice(0, 3)]).map((x) => S[x].d.nombre), ok: e.d.nombre };
-  } else if (quiz.mode === 'test') {
+  } else if (qm() === 'test') {
     let q = null;
     for (let k = 0; k < 5 && !q; k++) q = buildTest(e);
     if (!q) {
@@ -1344,7 +1522,7 @@ function nextQuestion() {
   }
   applyColors();
   renderSheet();
-  if (quiz.mode !== 'loc') focusMeshes([m], null, 2.2);
+  if (qm() !== 'loc') focusMeshes([m], null, 2.2);
 }
 
 function registerAnswer(ok) {
@@ -1359,6 +1537,7 @@ function registerAnswer(ok) {
     }
   } else quiz.streak = 0;
   quiz.wasOk = ok;
+  if (quiz.mode === 'exam') quiz.exam.results.push({ id: quiz.target.userData.id, side: quiz.target.userData.side, ok });
   markSeen(quiz.target.userData.id);
   applyColors();
   renderSheet();
@@ -1400,6 +1579,15 @@ function studyAction(act, el) {
   }
   if (act === 'studyMode') {
     quiz.mode = el.dataset.v;
+    if (quiz.mode === 'exam') {
+      quiz.exam = { results: [], t0: Date.now() };
+      quiz.ok = quiz.total = quiz.streak = 0;
+    }
+    return nextQuestion();
+  }
+  if (act === 'studyRestart') {
+    quiz.exam = { results: [], t0: Date.now() };
+    quiz.ok = quiz.total = quiz.streak = 0;
     return nextQuestion();
   }
   if (act === 'studyScope') {
@@ -1409,22 +1597,40 @@ function studyAction(act, el) {
 }
 
 function renderStudy() {
-  const modes = [['id', 'Identificar'], ['loc', 'Localizar'], ['test', 'Test'], ['cards', 'Fichas']];
-  const scopes = [['todo', 'Todo'], ['hueso', 'Huesos'], ['musculo', 'Músculos']];
+  const modes = [['id', 'Identificar'], ['loc', 'Localizar'], ['test', 'Test'], ['cards', 'Fichas'], ['exam', 'Examen']];
+  const scopes = [['todo', 'Todo'], ['hueso', 'Huesos'], ['musculo', 'Músculos'], ['fav', '★ Favoritos']];
   const t = quiz.target;
   const e = t && S[t.userData.id];
   let body = '';
-  if (!t) {
-    body = '<div class="tip clin"><b>No hay suficientes estructuras</b>Cambia la región, el tipo o las capas visibles para tener al menos 4 opciones.</div>';
-  } else if (quiz.mode === 'id' || quiz.mode === 'test') {
-    const q = quiz.mode === 'id' ? '¿Qué estructura está resaltada en <span class="target">naranja</span>?' : quiz.q.text;
+  const examDone = quiz.mode === 'exam' && quiz.exam.results.length >= EXAM_N && !quiz.answered;
+  if (quiz.mode === 'exam' && !examDone) body += `<div class="exam-bar"><span>Pregunta ${Math.min(quiz.exam.results.length + (quiz.answered ? 0 : 1), EXAM_N)} de ${EXAM_N}</span><div class="bar"><i style="width:${(quiz.exam.results.length / EXAM_N) * 100}%"></i></div></div>`;
+  if (examDone) {
+    const res = quiz.exam.results;
+    const nOk = res.filter((r) => r.ok).length;
+    const mins = Math.max(1, Math.round((Date.now() - quiz.exam.t0) / 60000));
+    const grade = nOk >= 9 ? '¡Excelente! 🏆' : nOk >= 7 ? '¡Muy bien! 💪' : nOk >= 5 ? 'Aprobado, sigue repasando 📚' : 'Toca repasar estos temas 🔁';
+    const failed = [...new Set(res.filter((r) => !r.ok).map((r) => r.id))];
+    const hist = store.get('exams', []);
+    if (!quiz.exam.saved) {
+      quiz.exam.saved = true;
+      hist.push({ ok: nOk, n: EXAM_N, at: Date.now() });
+      store.set('exams', hist.slice(-20));
+    }
+    body = `<div class="flash"><div class="muted small">Resultado del examen · ${mins} min</div><h3 style="font-size:34px">${nOk}/${EXAM_N}</h3><div>${grade}</div></div>
+      ${failed.length ? block('Repasa lo que fallaste', links(failed)) : '<div class="feedback ok"><b>Sin errores.</b> ¡Prueba con otra región!</div>'}
+      ${hist.length > 1 ? block('Tus últimos exámenes', `<div class="boxes">${hist.slice(-8).map((h) => `<div><i class="f" style="opacity:${0.25 + (0.75 * h.ok) / h.n}"></i>${h.ok}/${h.n}</div>`).join('')}</div>`) : ''}
+      <div class="actions"><button class="btn primary" data-act="studyRestart">Repetir examen</button></div>`;
+  } else if (!t) {
+    body = '<div class="tip clin"><b>No hay suficientes estructuras</b>Cambia la región, el tipo o las capas visibles (o añade más favoritos ★) para tener al menos 4 opciones.</div>';
+  } else if (qm() === 'id' || qm() === 'test') {
+    const q = qm() === 'id' ? '¿Qué estructura está resaltada en <span class="target">naranja</span>?' : quiz.q.text;
     body = `<div class="study-q">${q}</div><div class="opts">${quiz.q.opts.map((o) => {
       let cls = '';
       if (quiz.answered && o === quiz.q.ok) cls = 'ok';
       else if (quiz.answered && o === quiz.chosen) cls = 'bad';
       return `<button class="${cls}" data-act="studyOpt" data-v="${esc(o)}">${esc(o)}</button>`;
     }).join('')}</div>`;
-  } else if (quiz.mode === 'loc') {
+  } else if (qm() === 'loc') {
     body = `<div class="study-q">Toca en el modelo: <span class="target">${esc(e.d.nombre)}</span>${t.userData.side ? ` <span class="muted">(lado ${SIDE_NAME[t.userData.side]})</span>` : ''}</div>`;
     if (!quiz.answered) body += '<p class="muted small" style="margin:0">Gira el modelo y usa las capas si hace falta.</p>';
   } else {
@@ -1434,15 +1640,15 @@ function renderStudy() {
       ${quiz.revealed ? '' : '<button class="btn primary" data-act="studyReveal" style="justify-self:center">Mostrar respuesta</button>'}</div>`;
     if (quiz.revealed) body += `${quickSummary(e, true)}<div class="actions"><button class="btn" data-act="studyAgain">🔁 Repasar otra vez</button><button class="btn primary" data-act="studyKnew">✔ Lo sabía</button></div>`;
   }
-  if (t && quiz.answered) {
-    const fb = quiz.mode === 'loc' && !quiz.wasOk ? `Marcaste ${esc(quiz.clicked)}. La respuesta está en naranja.` : '';
+  if (t && quiz.answered && !examDone) {
+    const fb = qm() === 'loc' && !quiz.wasOk ? `Marcaste ${esc(quiz.clicked)}. La respuesta está en naranja.` : '';
     body += `<div class="feedback ${quiz.wasOk ? 'ok' : 'bad'}"><b>${quiz.wasOk ? '✔ ¡Correcto!' : '✘ No exactamente'}</b> ${fb}<div style="margin-top:8px">${quickSummary(e, true)}</div></div>
-      <div class="actions"><button class="btn primary" data-act="studyNext">Siguiente →</button><button class="btn" data-act="studyOpen">Ver ficha completa</button></div>`;
-  } else if (t && quiz.mode !== 'cards') body += '<div class="actions"><button class="btn ghost sm" data-act="studyNext">Saltar</button></div>';
+      <div class="actions"><button class="btn primary" data-act="studyNext">${quiz.mode === 'exam' && quiz.exam.results.length >= EXAM_N ? 'Ver resultado' : 'Siguiente →'}</button>${quiz.mode === 'exam' ? '' : '<button class="btn" data-act="studyOpen">Ver ficha completa</button>'}</div>`;
+  } else if (t && qm() !== 'cards' && quiz.mode !== 'exam') body += '<div class="actions"><button class="btn ghost sm" data-act="studyNext">Saltar</button></div>';
   const boxes = store.get('cards', {});
   const counts = [1, 2, 3, 4, 5].map((b) => Object.values(boxes).filter((v) => v === b).length);
   sheetBody.innerHTML = `<div class="kicker">🎓 Modo estudio${state.region ? ` · ${esc(REGIONS[state.region])}` : ''}</div>
-    <div class="seg small" style="margin:8px 40px 8px 0">${modes.map(([k, v]) => `<button data-act="studyMode" data-v="${k}" class="${quiz.mode === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div class="seg small study-modes" style="margin:8px 40px 8px 0">${modes.map(([k, v]) => `<button data-act="studyMode" data-v="${k}" class="${quiz.mode === k ? 'on' : ''}">${v}</button>`).join('')}</div>
     <div class="pane" style="padding-top:4px">${body}<div class="peek-end"></div>
     <div class="score"><div class="stat"><b>${quiz.ok}/${quiz.total}</b><span>Aciertos</span></div><div class="stat"><b>${quiz.streak}</b><span>Racha</span></div><div class="stat"><b>${quiz.best}</b><span>Mejor racha</span></div></div>
     ${quiz.mode === 'cards' ? `<div class="block"><h3>Tus fichas por nivel</h3><div class="boxes">${counts.map((c, i) => `<div><i class="${c ? 'f' : ''}"></i>N${i + 1}: ${c}</div>`).join('')}</div></div>` : ''}
@@ -1459,6 +1665,7 @@ $('#btnMenu').addEventListener('click', () => {
   if (isMobile()) document.body.classList.toggle('side-open');
   else {
     document.body.classList.toggle('side-closed');
+    document.body.classList.remove('side-auto');
     store.set('sideClosed', document.body.classList.contains('side-closed'));
   }
 });
@@ -1590,7 +1797,14 @@ function start() {
   $('#loading').classList.add('done');
   requestAnimationFrame(loop);
 }
-window.addEventListener('hashchange', openFromHash);
+window.addEventListener('hashchange', () => {
+  navigatingHistory = true;
+  try {
+    openFromHash();
+  } finally {
+    navigatingHistory = false;
+  }
+});
 
 // deja pintar el indicador de carga antes de construir la geometría
 requestAnimationFrame(() =>
