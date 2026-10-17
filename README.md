@@ -4,15 +4,21 @@ Atlas 3D interactivo de **huesos y músculos** del cuerpo humano para estudiar a
 
 ## Qué incluye
 
-- **Modelo 3D** con 192 piezas óseas (cráneo, 24 vértebras, sacro, cóccix, costillas, esternón, cinturas, carpo, tarso, metacarpianos, metatarsianos y falanges) y 216 músculos (108 por lado + diafragma y orbicular de la boca).
-- **Ficha de cada estructura**:
-  - Músculos: acción, origen, inserción, inervación, irrigación, sinergistas, antagonistas y nota clínica.
-  - Huesos: descripción, partes y accidentes óseos, articulaciones (con su tipo), músculos que se originan y se insertan en él y nota clínica.
-- **Conexiones en 3D**: al seleccionar un músculo se colorean sus huesos de origen (verde) e inserción (azul); al seleccionar un hueso, los músculos que se originan o insertan en él y los huesos con los que articula (morado).
-- **Filtros**: huesos / músculos, por región, por lado, por profundidad (retirar capas musculares), opacidad, aislar una estructura con sus conexiones, ocultar estructuras.
-- **Buscador** por nombre, nombre latino, inervación o acción (p. ej. "nervio radial" lista los músculos que inerva).
-- **Modo estudio**: *Identificar* (elige el nombre de la estructura resaltada) o *Localizar* (haz clic en la estructura pedida), filtrable por región y tipo.
-- Enlaces compartibles a una estructura (`index.html#biceps_braquial:d`). Funciona en móvil.
+- **Modelo 3D** con 192 piezas óseas y 216 músculos (108 por lado + diafragma y orbicular de la boca). Los músculos muestran sus fibras y sus tendones (en blanco) e iluminación realista.
+- **Ficha por pestañas** para cada estructura:
+  - *Resumen*: qué hace, de dónde sale y a dónde llega, nervio e irrigación de un vistazo, truco para recordar y dato clínico.
+  - *Detalle*: origen, inserción, inervación, irrigación y acción completos (huesos: partes y accidentes óseos).
+  - *Conexiones*: huesos de origen e inserción, sinergistas, antagonistas, músculos que comparten nervio y grupo (huesos: articulaciones y músculos que se anclan).
+  - *Clínica*: notas clínicas y qué ocurre si se lesiona su nervio.
+  - *Mis notas*: apuntes personales guardados en el navegador.
+- **Colores de conexión y etiquetas 3D**: lo seleccionado en naranja, origen en verde, inserción en azul y articulaciones en morado; el resto queda en modo "fantasma".
+- **16 lecciones guiadas** (manguito rotador, cuádriceps, isquiotibiales, pata de ganso, carpo, columna, costillas…) con trucos para memorizar.
+- **Mapa de nervios**: elige un nervio y verás todos los músculos que inerva y las consecuencias de su lesión.
+- **Modo estudio**: *Identificar*, *Localizar*, *Test* (preguntas de nervio, acción, origen, inserción y articulaciones) y *Fichas* con repaso espaciado (cajas de Leitner).
+- **Progreso**: estructuras vistas y lecciones completadas.
+- Filtros por tipo, región, lado y profundidad muscular; transparencia; aislar u ocultar; vistas de cámara, giro automático y captura de imagen.
+- Buscador de estructuras, nervios y lecciones; enlaces compartibles (`#biceps_braquial:d`, `#leccion=manguito`, `#nervio=radial`).
+- **Versión móvil**: panel lateral deslizable y ficha como hoja inferior que se expande con un toque.
 
 ## Publicar en GitHub Pages
 
@@ -33,12 +39,15 @@ npx http-server .   # o: python3 -m http.server
 ```
 index.html            interfaz
 css/style.css         estilos
-js/main.js            visor, filtros, ficha, búsqueda y modo estudio
+js/main.js            visor, filtros, ficha, lecciones, nervios, búsqueda y modo estudio
+js/materials.js       materiales (shader de músculo con tendones) e iluminación
 js/geo.js             utilidades geométricas
 js/model/skeleton.js  geometría de los huesos
 js/model/muscles.js   geometría de los músculos (de origen a inserción)
 js/data/bones.js      datos de los huesos
 js/data/muscles.js    datos de los músculos
+js/data/lessons.js    lecciones guiadas
+js/data/nerves.js     nervios y sus lesiones
 vendor/               Three.js r170 (licencia MIT)
 dev/                  herramientas de desarrollo (capturas y validación de datos)
 ```

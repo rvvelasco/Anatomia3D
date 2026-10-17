@@ -15,6 +15,9 @@ function clean(g) {
 
 export function merge(geoms) {
   const list = geoms.filter(Boolean).map(clean);
+  // solo se conservan los atributos que tienen todas las piezas
+  const names = Object.keys(list[0].attributes).filter((n) => list.every((g) => g.attributes[n]));
+  for (const g of list) for (const n of Object.keys(g.attributes)) if (!names.includes(n)) g.deleteAttribute(n);
   if (list.length === 1) return list[0];
   return mergeGeometries(list, false);
 }
@@ -46,9 +49,23 @@ export function cup(center, r, open, angleDeg = 95, seg = 18) {
 // Tubo de sección elíptica a lo largo de una curva suave.
 // rad(t) -> [ancho, grosor] (semiejes). `out` define la dirección del grosor
 // (vector fijo o función (p, t) -> vector); si falta se usan marcos de Frenet.
+// Añade el atributo aMus = [tendón (0..1), sombreado de fibra] que usa el shader muscular.
+// opts.tendon: fracción de longitud tendinosa en cada extremo (número o [inicio, fin]).
 export function sweep(points, rad, opts = {}) {
   const pts = points.map(toV);
-  const { segs = Math.max(8, pts.length * 6), radial = 12, out = null, caps = true } = opts;
+  const { segs = Math.max(8, pts.length * 6), radial = 12, out = null, caps = true, tendon = 0 } = opts;
+  const [ta, tb] = Array.isArray(tendon) ? tendon : [tendon, tendon];
+  const sstep = (e0, e1, x) => {
+    const k = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return k * k * (3 - 2 * k);
+  };
+  const tendonAt = (t) => {
+    if (ta >= 1 || tb >= 1) return 1;
+    const a = ta > 0 ? 1 - sstep(ta * 0.55, ta, t) : 0;
+    const b = tb > 0 ? sstep(1 - tb, 1 - tb * 0.55, t) : 0;
+    return Math.max(a, b);
+  };
+  const mus = [];
   const curve = pts.length === 2 ? new THREE.LineCurve3(pts[0], pts[1]) : new THREE.CatmullRomCurve3(pts, false, 'centripetal');
   const radFn = typeof rad === 'function' ? rad : () => (Array.isArray(rad) ? rad : [rad, rad]);
   const frames = out ? null : curve.computeFrenetFrames(segs, false);
@@ -76,6 +93,7 @@ export function sweep(points, rad, opts = {}) {
       const a = (j / radial) * Math.PI * 2;
       tmp.copy(p).addScaledVector(B, Math.cos(a) * w).addScaledVector(N, Math.sin(a) * h);
       pos.push(tmp.x, tmp.y, tmp.z);
+      mus.push(tendonAt(t), 1 - 0.3 * Math.pow(Math.abs(Math.cos(a)), 3) * Math.min(1, w / Math.max(h, 0.01) - 0.6));
     }
   }
   for (let i = 0; i < segs; i++) {
@@ -92,6 +110,7 @@ export function sweep(points, rad, opts = {}) {
       const p = curve.getPointAt(t);
       const ci = pos.length / 3;
       pos.push(p.x, p.y, p.z);
+      mus.push(tendonAt(t), 1);
       for (let j = 0; j < radial; j++) {
         const a = ring * radial + j;
         const b = ring * radial + ((j + 1) % radial);
@@ -102,6 +121,7 @@ export function sweep(points, rad, opts = {}) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aMus', new THREE.Float32BufferAttribute(mus, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
@@ -171,6 +191,7 @@ export function plate(outline, thickness = 0.4, bulge = 0) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aMus', new THREE.Float32BufferAttribute(new Array((pos.length / 3) * 2).fill(0).map((_, i) => (i % 2 ? 0.95 : 0)), 2));
   g.computeVertexNormals();
   return g;
 }
@@ -226,6 +247,7 @@ export function skullPatch(center, radii, u0, u1, v0, v1, shell = 0.55, seg = 20
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aMus', new THREE.Float32BufferAttribute(new Array((pos.length / 3) * 2).fill(0).map((_, i) => (i % 2 ? 0.95 : 0)), 2));
   g.computeVertexNormals();
   return g;
 }
@@ -251,16 +273,16 @@ export function along(poly, s) {
 
 // Lámina muscular: varias fibras (husos) que recorren una serie de polilíneas
 // de control (origen -> ... -> inserción). Útil para músculos en abanico.
-export function sheet(lines, { n = 1, w = [0.4, 1, 0.3], h = [0.25, 0.6, 0.2], out = null, spread = [0, 1], pow = 0.8 } = {}) {
+export function sheet(lines, { n = 1, w = [0.4, 1, 0.3], h = [0.25, 0.6, 0.2], out = null, spread = [0, 1], pow = 0.8, tendon = 0.05 } = {}) {
   const geos = [];
   // las fibras se solapan ligeramente para que la lámina se vea continua
-  const k = n > 1 ? 1.3 : 1;
+  const k = n > 1 ? 1.45 : 1;
   const fw = profile(w[0] * k, w[1] * k, w[2] * k, pow);
   const fh = profile(h[0], h[1], h[2], pow);
   for (let i = 0; i < n; i++) {
     const s = n === 1 ? 0.5 : spread[0] + ((spread[1] - spread[0]) * i) / (n - 1);
     const path = lines.map((l) => along(l, s));
-    geos.push(sweep(path, (t) => [fw(t), fh(t)], { out, radial: 10, segs: Math.max(10, path.length * 6) }));
+    geos.push(sweep(path, (t) => [fw(t), fh(t)], { out, radial: 12, segs: Math.max(12, path.length * 7), tendon }));
   }
   return merge(geos);
 }
@@ -283,6 +305,7 @@ export function surface(fn, na = 20, nt = 10) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aMus', new THREE.Float32BufferAttribute(new Array((pos.length / 3) * 2).fill(0).map((_, i) => (i % 2 ? 0.95 : 0)), 2));
   g.computeVertexNormals();
   return g;
 }

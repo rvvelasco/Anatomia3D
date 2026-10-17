@@ -52,13 +52,13 @@ function limb(a, b, s) {
 
 const trunkOut = (p) => V(p.x, 0, p.z - 1);
 
-function fus(path, w, h = w, out = null, pow = 0.8) {
+function fus(path, w, h = w, out = null, pow = 0.8, tendon = 0.13) {
   const fw = profile(w[0], w[1], w[2], pow);
   const fh = profile(h[0], h[1], h[2], pow);
-  return sweep(path, (t) => [fw(t), fh(t)], { out, radial: 12, segs: Math.max(16, path.length * 8) });
+  return sweep(path, (t) => [fw(t), fh(t)], { out, radial: 14, segs: Math.max(18, path.length * 9), tendon });
 }
 
-const tendon = (path, r = 0.12) => rod(path, r, r * 0.8, r, { radial: 6 });
+const tendon = (path, r = 0.12) => rod(path, r, r * 0.8, r, { radial: 6, tendon: 1 });
 
 // ---------------------------------------------------------------------------
 // Definiciones por lado. Cada función recibe s (±1) y devuelve una geometría.
@@ -114,12 +114,12 @@ function defs(s) {
       [onSkull(45, s * 3, 0.35), onSkull(42, s * 50, 0.35)],
       [onSkull(10, s * 3, 0.35), onSkull(10, s * 50, 0.35)],
       [onSkull(-22, s * 3, 0.45), onSkull(-20, s * 48, 0.45)],
-    ], { n: 5, w: [0.75, 0.8, 0.8], h: [0.12, 0.2, 0.15], out: sOut }),
+    ], { n: 5, w: [0.75, 0.8, 0.8], h: [0.12, 0.2, 0.15], out: sOut, tendon: 0 }),
     sheet([
       [onSkull(150, s * 4, 0.3), onSkull(150, s * 45, 0.3)],
       [onSkull(175, s * 4, 0.35), onSkull(175, s * 48, 0.35)],
       [onSkull(200, s * 4, 0.4), onSkull(200, s * 50, 0.4)],
-    ], { n: 4, w: [0.75, 0.8, 0.75], h: [0.12, 0.22, 0.15], out: sOut }),
+    ], { n: 4, w: [0.75, 0.8, 0.75], h: [0.12, 0.22, 0.15], out: sOut, tendon: 0 }),
   ]);
 
   d.orbicular_ojo = () => {
@@ -129,7 +129,7 @@ function defs(s) {
       const a = (k / 16) * Math.PI * 2;
       ring.push(c.clone().add(V(Math.cos(a) * 2.0, Math.sin(a) * 1.9, -Math.abs(Math.cos(a)) * 0.5 * (Math.cos(a) * s > 0 ? 1.2 : 0.4))));
     }
-    return sweep(ring, [0.6, 0.18], { out: V(s * 0.2, 0, 1), radial: 8, segs: 48, caps: false });
+    return sweep(ring, [0.6, 0.18], { out: V(s * 0.2, 0, 1), radial: 8, segs: 48, caps: false, tendon: 0 });
   };
 
   d.cigomatico_mayor = () => fus([P(5.4, 157.6, 5.8), P(4.4, 155.2, 7.4), P(2.8, 152.6, 8.4)], [0.35, 0.4, 0.25], [0.15, 0.2, 0.15], V(s * 0.3, 0, 1));
