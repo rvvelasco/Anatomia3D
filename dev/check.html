@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><script type="importmap">{"imports":{"three":"../vendor/three.module.min.js"}}</script></head><body><script type="module">
+import { buildSkeleton } from '../js/model/skeleton.js';
+import { buildMuscles } from '../js/model/muscles.js';
+import { BONES } from '../js/data/bones.js';
+import { MUSCLES } from '../js/data/muscles.js';
+const out=[];
+const sk=buildSkeleton(), mu=buildMuscles();
+const gb=new Set(sk.map(p=>p.id)), gm=new Set(mu.map(p=>p.id));
+for(const id of gb) if(!BONES[id]) out.push('bone geo sin datos: '+id);
+for(const id in BONES) if(!gb.has(id)) out.push('bone datos sin geo: '+id);
+for(const id of gm) if(!MUSCLES[id]) out.push('muscle geo sin datos: '+id);
+for(const id in MUSCLES) if(!gm.has(id)) out.push('muscle datos sin geo: '+id);
+for(const [id,b] of Object.entries(BONES)) for(const [o] of b.articulaciones) if(!BONES[o]) out.push(`art ${id}->${o}`);
+for(const [id,m] of Object.entries(MUSCLES)){ for(const o of [...m.oh,...m.ih]) if(!BONES[o]) out.push(`musc ${id} hueso ${o}`); for(const o of [...(m.sinergistas||[]),...(m.antagonistas||[])]) if(!MUSCLES[o]) out.push(`musc ${id} rel ${o}`); for(const k of ['nombre','origen','insercion','inervacion','irrigacion','accion','region','capa']) if(m[k]==null) out.push(`musc ${id} falta ${k}`);}
+let tris=0; for(const p of [...sk,...mu]) { tris+=p.geo.attributes.position.count/3; for(const v of p.geo.attributes.position.array) if(!isFinite(v)) {out.push('NaN en '+p.key);break;} }
+out.push(`huesos:${sk.length} musculos:${mu.length} datosH:${Object.keys(BONES).length} datosM:${Object.keys(MUSCLES).length} tris:${Math.round(tris)}`);
+window.result=out.join('\n');
+</script></body></html>

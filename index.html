@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Anatomía 3D</title>
+  <meta name="description" content="Atlas 3D interactivo de huesos y músculos del cuerpo humano para estudiar anatomía: orígenes, inserciones, inervación, irrigación, acciones y articulaciones." />
+  <meta name="theme-color" content="#11151c" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='14' r='9' fill='%23e9dfc6'/%3E%3Cpath d='M20 28h24l-4 18h-16z' fill='%23c4544a'/%3E%3Cpath d='M26 46h4v14h-4zM34 46h4v14h-4z' fill='%23e9dfc6'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn only-mobile" id="btnLeft" aria-label="Abrir lista">☰</button>
+    <div class="brand"><span class="logo">⚕</span><span>Anatomía <b>3D</b></span></div>
+    <div class="search">
+      <input id="search" type="search" placeholder="Buscar hueso o músculo… (ej. bíceps, fémur, nervio radial)" autocomplete="off" />
+      <div id="searchResults" class="search-results" hidden></div>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="btnQuiz" title="Modo estudio: ponte a prueba">🎓 <span class="hide-sm">Estudiar</span></button>
+      <button class="icon-btn" id="btnHelp" title="Ayuda" aria-label="Ayuda">?</button>
+      <button class="icon-btn only-mobile" id="btnRight" aria-label="Abrir ficha">ℹ</button>
+    </div>
+  </header>
+
+  <aside class="panel left" id="panelLeft">
+    <div class="panel-head">
+      <div class="seg" id="typeFilter" role="tablist">
+        <button data-type="todo" class="on">Todo</button>
+        <button data-type="hueso">Huesos</button>
+        <button data-type="musculo">Músculos</button>
+      </div>
+      <div class="chips" id="regionChips"></div>
+      <label class="check"><input type="checkbox" id="isolateRegion" /> Mostrar en 3D solo la región elegida</label>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="list-foot" id="listCount"></div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <canvas id="canvas"></canvas>
+    <div id="tooltip" class="tooltip" hidden></div>
+    <div id="loading" class="loading"><div class="spinner"></div><p>Construyendo el modelo anatómico…</p></div>
+
+    <div class="layers card" id="layers">
+      <div class="layers-title">Capas</div>
+      <label class="check"><input type="checkbox" id="showBones" checked /> Huesos</label>
+      <label class="check"><input type="checkbox" id="showMuscles" checked /> Músculos</label>
+      <label class="check"><input type="checkbox" id="showCart" checked /> Cartílagos</label>
+      <div class="field">
+        <span>Profundidad muscular</span>
+        <div class="seg small" id="depthSeg">
+          <button data-d="1" class="on" title="Todas las capas">Todas</button>
+          <button data-d="2" title="Retira la capa superficial">Media</button>
+          <button data-d="3" title="Solo la capa profunda">Profunda</button>
+        </div>
+      </div>
+      <div class="field">
+        <span>Opacidad músculos</span>
+        <input type="range" id="muscleOpacity" min="0.1" max="1" step="0.05" value="1" />
+      </div>
+      <div class="field">
+        <span>Lado</span>
+        <div class="seg small" id="sideSeg">
+          <button data-s="ambos" class="on">Ambos</button>
+          <button data-s="d">Derecho</button>
+          <button data-s="i">Izquierdo</button>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="dimOthers" checked /> Atenuar el resto al seleccionar</label>
+    </div>
+
+    <div class="views card">
+      <button data-view="front" title="Vista anterior">Frente</button>
+      <button data-view="back" title="Vista posterior">Espalda</button>
+      <button data-view="right" title="Lateral derecha">Der.</button>
+      <button data-view="left" title="Lateral izquierda">Izq.</button>
+      <button data-view="reset" title="Restablecer cámara y visibilidad">⟲</button>
+    </div>
+
+    <div class="legend card" id="legend" hidden></div>
+
+    <div class="quiz card" id="quiz" hidden>
+      <div class="quiz-head">
+        <b>Modo estudio</b>
+        <div class="seg small" id="quizMode">
+          <button data-m="id" class="on">Identificar</button>
+          <button data-m="loc">Localizar</button>
+        </div>
+        <button class="icon-btn" id="quizClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="quiz-scope">
+        <div class="seg small" id="quizType">
+          <button data-t="todo" class="on">Todo</button>
+          <button data-t="hueso">Huesos</button>
+          <button data-t="musculo">Músculos</button>
+        </div>
+        <span class="muted small">Usa la región elegida en la lista</span>
+      </div>
+      <div class="quiz-q" id="quizQ"></div>
+      <div class="quiz-opts" id="quizOpts"></div>
+      <div class="quiz-foot">
+        <span id="quizScore">0 / 0</span>
+        <button class="btn" id="quizNext">Siguiente ➜</button>
+      </div>
+    </div>
+  </main>
+
+  <aside class="panel right" id="panelRight">
+    <div id="info" class="info">
+      <div class="empty">
+        <div class="empty-icon">🦴💪</div>
+        <h2>Explora el cuerpo humano</h2>
+        <p>Haz clic en cualquier hueso o músculo del modelo, o búscalo en la lista, para ver su ficha completa: origen, inserción, inervación, irrigación, acción, articulaciones y con qué estructuras se conecta.</p>
+        <ul class="tips">
+          <li><b>Arrastrar</b>: rotar · <b>Rueda / pellizco</b>: zoom · <b>Clic derecho / dos dedos</b>: desplazar</li>
+          <li><b>Doble clic</b> sobre una estructura: centrarla</li>
+          <li>Usa <b>Profundidad muscular</b> para retirar capas y ver los músculos profundos</li>
+          <li>Pulsa <b>🎓 Estudiar</b> para practicar con preguntas</li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+  <div class="modal" id="help" hidden>
+    <div class="modal-box">
+      <button class="icon-btn modal-close" id="helpClose" aria-label="Cerrar">✕</button>
+      <h2>Cómo usar Anatomía 3D</h2>
+      <ul>
+        <li><b>Rotar</b>: arrastra con el ratón o un dedo. <b>Zoom</b>: rueda o pellizco. <b>Desplazar</b>: clic derecho o dos dedos.</li>
+        <li><b>Seleccionar</b>: clic sobre el modelo o sobre la lista. <b>Doble clic</b>: centrar la cámara.</li>
+        <li>Al seleccionar un <b>músculo</b> se colorean los huesos de <span class="sw sw-o"></span> origen e <span class="sw sw-i"></span> inserción.</li>
+        <li>Al seleccionar un <b>hueso</b> se colorean los músculos que se <span class="sw sw-o"></span> originan e <span class="sw sw-i"></span> insertan en él, y los huesos con los que <span class="sw sw-a"></span> articula.</li>
+        <li><b>Aislar</b> muestra solo la estructura y sus conexiones. <b>Ocultar</b> la quita del modelo.</li>
+        <li><b>Profundidad muscular</b>: retira la capa superficial o deja solo los músculos profundos.</li>
+        <li><b>Modo estudio</b>: <i>Identificar</i> (elige el nombre de la estructura resaltada) o <i>Localizar</i> (haz clic en la estructura pedida).</li>
+        <li>El enlace de la página guarda la estructura seleccionada: puedes compartirlo.</li>
+      </ul>
+      <p class="muted small">Modelo anatómico esquemático generado por código con fines de estudio. Las formas son simplificadas; los datos (origen, inserción, inervación, irrigación y acción) siguen la terminología anatómica estándar. Ante dudas, contrasta con tu atlas de referencia.</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
